@@ -1,0 +1,106 @@
+#killme.py
+#KENNETH SAJID ESPARZA RAMOS 1748613
+from __future__ import absolute_import, division, print_function #LIBS
+import base64
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf        #AQUI TA TENSORFLOW!!!
+from tf_agents.agents.dqn import dqn_agent
+from tf_agents.drivers import dynamic_step_driver
+from tf_agents.environments import suite_gym
+from tf_agents.environments import tf_py_environment
+from tf_agents.eval import metric_utils
+from tf_agents.metrics import tf_metrics
+from tf_agents.networks import q_network
+from tf_agents.replay_buffers import tf_uniform_replay_buffer
+from tf_agents.trajectories import trajectory
+from tf_agents.utils import common
+
+#KENNETH SAJID ESPARZA RAMOS 1748613
+env = suite_gym.load('CartPole-v1')                                             #De gym obtenemos el ambiente
+env = tf_py_environment.TFPyEnvironment(env)
+#KENNETH SAJID ESPARZA RAMOS 1748613
+q_net = q_network.QNetwork(env.observation_spec(), env.action_spec()) #Se utliza el algoritmo DEEP Q LEARNING (DQN)
+
+optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=0.001)   #Se Optimiza cob ADAM
+
+#KENNETH SAJID ESPARZA RAMOS 1748613
+train_step_counter = tf.Variable(0)                  #Se cuenta las interacciones
+agent = dqn_agent.DqnAgent(env.time_step_spec(),     #Se inizializa el agente con parametros
+                           env.action_spec(),        # que obtiene el ambiente
+                           q_network=q_net,          #DEEP Q LEARNING (DQN)
+                           optimizer=optimizer,      #ADAM
+                           td_errors_loss_fn= 
+                                  common.element_wise_squared_loss,#Temporal Difference LEARNING
+                           train_step_counter=train_step_counter) #en que interacion vas
+agent.initialize()   #Se inicializa el agente en el ambiente
+
+#KENNETH SAJID ESPARZA RAMOS 1748613
+def compute_avg_return(environment, policy, num_episodes=10): #el codigo siguiente se usa para tomar desiciones sobre el ambiente
+    total_return = 0.0                                         #y obtiene el promedio de recompesa acumulada
+    for _ in range(num_episodes):
+        time_step = environment.reset()                        #Reinicia el ambiente
+        episode_return = 0.0                                   #Igulando a 0
+        while not time_step.is_last(): #mientras no sea tiempo de tomar la siguiente decision
+            action_step = policy.action(time_step)             #que politica se tomara
+            time_step = environment.step(action_step.action)   #el tiempo que se tomo
+            episode_return += time_step.reward                 #cual es el resultado
+        total_return += episode_return
+    avg_return = total_return / num_episodes                   #Promedio
+    return avg_return.numpy()[0]
+# Evalúe la política del agente una vez antes de la capacitación.Evaluar el agente una vez enterado
+avg_return = compute_avg_return(env, agent.policy, 5)
+returns = [avg_return]
+#KENNETH SAJID ESPARZA RAMOS 1748613
+replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(    #se utiliza para recolectar informacion
+                                data_spec=agent.collect_data_spec, #de cada interaccion                                                               
+                                batch_size=env.batch_size,                                                              
+                                max_length=100000)
+def collect_step(environment, policy, buffer):
+    time_step = environment.current_time_step()           #el tiempo
+    action_step = policy.action(time_step)                #Accion que se tomara
+    next_time_step = environment.step(action_step.action) #tiempo a la siguiente accion
+    traj = trajectory.from_transition(time_step,          #Objeto con la suma de estas
+                                      action_step, 
+                                      next_time_step)
+# Add trajectory to the replay buffer
+    buffer.add_batch(traj) #Para Agregar trayectoria al búfer de reproducción
+
+#############################################################################################################################
+#KENNETH SAJID ESPARZA RAMOS 1748613
+collect_steps_per_iteration = 1              #1 interaccion= 1 step(paso)
+batch_size = 64
+dataset = replay_buffer.as_dataset(num_parallel_calls=3, #modificando la politica cada interaccion
+                                   sample_batch_size=batch_size, 
+                                   num_steps=2).prefetch(3)
+iterator = iter(dataset)
+num_iterations = 20000     #Numero de interaccion totales
+env.reset()
+for _ in range(batch_size):
+    collect_step(env, agent.policy, replay_buffer)
+for _ in range(num_iterations):
+    # Collect a few steps using collect_policy and save to the replay buffer.
+    # #Cambiar la politica y salvando datos.
+    for _ in range(collect_steps_per_iteration):
+        collect_step(env, agent.collect_policy, replay_buffer)
+    # Sample a batch of data from the buffer and update the agent's network. #Actulizando al agente
+    experience, unused_info = next(iterator)
+    train_loss = agent.train(experience).loss
+    step = agent.train_step_counter.numpy()
+    # Print loss every 200 steps. #Imprime cada 200 pasos los resultados
+    if step % 200 == 0:
+        print('step = {0}: loss = {1}'.format(step, train_loss))
+    # Evaluate agent's performance every 1000 steps. #imprime cada 1000 pasos los resultados
+    if step % 1000 == 0:
+        avg_return = compute_avg_return(env, agent.policy, 5)
+        print('step = {0}: Average Return = {1}'.format(step, avg_return))
+        returns.append(avg_return)
+
+
+#KENNETH SAJID ESPARZA RAMOS 1748613
+iterations = range(0, num_iterations + 1, 1000)
+plt.plot(iterations, returns)
+plt.ylabel('Average Return')
+plt.xlabel('Iterations')
+plt.show()
